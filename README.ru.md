@@ -1,9 +1,7 @@
 
 ---
 
-### 2. Русская версия: `README.ru.md`
-
-Скопируйте это в `README.ru.md`:
+### 2. `README.ru.md` (Russian Version)
 
 ```markdown
 # Автоматизация SSL для MDaemon через Nginx Proxy Manager
@@ -29,33 +27,24 @@ MDaemon на Windows Server не умеет автоматически заби�
 ### Linux-сервер (Nginx):
 1. Развернут Nginx Proxy Manager (см. `linux/docker-compose.yml`).
 2. Настроены Proxy Hosts с получением SSL Let's Encrypt.
-3. Установлена и настроена Samba для раздачи папки `/data/letsencrypt/live` (см. `linux/smb.conf.txt`).
+   * *Примечание по SAN-сертификатам:* Если у вас несколько доменов для одного сервера MDaemon, перечислите их все в поле **Domain Names** через **пробел** (например, `mail.domain.com domain2.com domain3.com`). NPM сгенерирует один общий сертификат, содержащий их все.
+3. Установлена и настроена Samba для раздачи папки `/data/letsencrypt/live` (см. `linux/smb.conf.txt` и `linux/smb.conf.global.patch.txt`).
 
 ### Windows-сервер (MDaemon):
-1. Включен гостевой доступ SMB (если используется Samba без пароля).
-2. Установлен **OpenSSL** (рекомендуется `OpenSSL-x64-hybridCRT-4.1.0.exe`). Путь по умолчанию: `C:\Program Files\OpenSSL Library\openssl-4.1\bin\openssl.exe`
-3. Включен клиент SMB1 (если требуется для совместимости с Samba).
+> ⚠️ **ВНИМАНИЕ (БЕЗОПАСНОСТЬ):** Шаги ниже включают небезопасный гостевой доступ SMB и SMB1 для совместимости с простой настройкой Samba. Это следует делать только в изолированной доверенной локальной сети. Для производственной среды настройте Samba с выделенным пользователем (`valid users`) и используйте `net use` в PowerShell для авторизации.
+> 
+> ⚠️ **ВНИМАНИЕ (ПУТИ):** В скриптах по умолчанию указан путь `D:\MDaemon`. Если ваш MDaemon установлен на диск `C:\`, вы **обязаны** изменить переменную `$MDaemonPath` в файлах `Update-Cert.ps1` и `Install-CertTask.ps1`.
 
-## 🚀 Установка и настройка
-1. Скопируйте папку `windows` на сервер MDaemon (например, в `D:\MDaemon\Scripts\`).
-2. Откройте `Update-Cert.ps1` и проверьте пути (`$MDaemonPath`, `$openssl`, `$NginxShare`).
-3. Запустите `Install-CertTask.ps1` от имени Администратора, чтобы создать задачу в Планировщике Windows на ежедневный запуск в 04:00.
+1. Включен гостевой доступ SMB (если используется Samba без пароля):
+   ```powershell
+   Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name "AllowInsecureGuestAuth" -Value 1 -Type DWord
 
-## ⚙️ Как это работает
-* **Mutex (Защита от дурака):** Скрипт не запустится, если предыдущий экземпляр еще работает.
-* **Умное ожидание:** Используется цикл ожидания полной остановки службы MDaemon (до 2 минут), что критически важно для серверов с медленными дисками.
-* **Безопасная запись INI:** Используется API `WritePrivateProfileString` (через C#), чтобы не повредить `MDaemon.ini`.
-* **Очистка:** Скрипт автоматически удаляет из хранилища Windows старые сертификаты Let's Encrypt для этого же домена.
+    Установлен OpenSSL (рекомендуется OpenSSL-x64-hybridCRT-4.1.0.exe от OpenSSL Corporation).
 
-## ⚠️ Известные проблемы и их решения
-* **Ошибка `certutil: ERROR_FILE_NOT_FOUND`**: Возникает из-за пробелов в путях. Заменено на нативный PowerShell `Import-PfxCertificate`.
-* **Служба MDaemon не запускается после обновления**: Возникает при одновременном запуске двух копий скрипта. Решено с помощью Mutex и ожидания статуса `Stopped`.
-* **Файлы не видны по SMB**: Samba по умолчанию не отдает симлинки. В конфиге добавлены `follow symlinks = yes` и `wide links = yes`.
+    Включен клиент SMB1 (если требуется для совместимости с Samba):
+    powershell
 
-## 📄 Лицензия
-Проект распространяется под лицензией MIT.
-
-	Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -All -NoRestart
+    Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -All -NoRestart
 
 🚀 Установка и настройка
 
@@ -65,13 +54,13 @@ MDaemon на Windows Server не умеет автоматически заби�
 
         $MDaemonPath (по умолчанию D:\MDaemon).
 
-        $openssl (путь к установленному OpenSSL).
+        $NginxShare (сетевой путь к шаре Samba).
 
-        $NginxShare (путь к сетевой папке Samba).
+    Откройте Install-CertTask.ps1 и проверьте переменную $CertFolder (например, npm-3 для Сервера 1, npm-4 для Сервера 2). Скрипт автоматически определяет свой путь.
 
     Запустите Install-CertTask.ps1 от имени Администратора, чтобы создать задачу в Планировщике Windows на ежедневный запуск в 04:00.
 
-⚙️ Как это работает (Особенности скрипта)
+⚙️ Как это работает
 
     Mutex (Защита от дурака): Скрипт не запустится, если предыдущий экземпляр еще работает.
 
@@ -79,12 +68,14 @@ MDaemon на Windows Server не умеет автоматически заби�
 
     Безопасная запись INI: Используется API WritePrivateProfileString (через C#), чтобы не повредить MDaemon.ini.
 
-    Очистка: Скрипт автоматически удаляет из хранилища Windows старые сертификаты Let's Encrypt для этого же домена, предотвращая их накопление.
+    Очистка: Скрипт автоматически удаляет из хранилища Windows старые сертификаты Let's Encrypt для этого же домена.
 
 ⚠️ Известные проблемы и их решения
 
-    Ошибка certutil: ERROR_FILE_NOT_FOUND: Возникает из-за пробелов в путях. В этом скрипте заменено на нативный PowerShell Import-PfxCertificate.
+    Ошибка certutil: ERROR_FILE_NOT_FOUND: Возникает из-за пробелов в путях. Заменено на нативный PowerShell Import-PfxCertificate.
 
     Служба MDaemon не запускается после обновления: Возникает при одновременном запуске двух копий скрипта. Решено с помощью Mutex и ожидания статуса Stopped.
 
-    Файлы не видны по SMB: Samba по умолчанию не отдает симлинки. В конфиге Samba добавлены follow symlinks = yes и wide links = yes.
+    Файлы не видны по SMB: Samba по умолчанию не отдает симлинки. Применение глобального патча включает follow symlinks = yes и wide links = yes.
+
+📄 Лицензия

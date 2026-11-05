@@ -2,7 +2,7 @@
     [Parameter(Mandatory=$true)][string]$CertFolder, # Folder name (e.g., npm-3 or npm-4)
     [string]$NginxShare = "\\192.168.1.3\certs",
     [string]$PfxPassword = [System.Guid]::NewGuid().ToString(),
-    [string]$MDaemonPath = "D:\MDaemon"
+    [string]$MDaemonPath = "D:\MDaemon" # CHANGE THIS if MDaemon is installed on another drive
 )
 
 $LogFile      = Join-Path $MDaemonPath "Logs\NginxCertUpdate.log"
@@ -11,7 +11,7 @@ $TempPfx      = Join-Path $env:TEMP "$CertFolder-$(Get-Date -Format 'yyyyMMddHHm
 $ServiceName  = "MDaemon"
 $SourceCertPath = Join-Path $NginxShare $CertFolder
 
-# Safe function for writing to INI (WritePrivateProfileString)
+# Safe function for writing to INI (WritePrivateProfileString API)
 $signature = @'
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 public static extern bool WritePrivateProfileString(string section, string key, string val, string filePath);
@@ -50,11 +50,20 @@ try {
     Copy-Item $fullchain $LocalChain -Force
     Copy-Item $privkey $LocalKey -Force
 
-    # --- OPENSSL PATH ---
+    # --- SMART OPENSSL SEARCH ---
+    # Try default path first (based on OpenSSL 4.1 installer)
     $openssl = "C:\Program Files\OpenSSL Library\openssl-4.1\bin\openssl.exe"
+    
+    # If not found, search entire Program Files directory
     if (-not (Test-Path $openssl)) {
-        throw "OpenSSL not found at $openssl."
+        $found = Get-ChildItem -Path "C:\Program Files" -Filter "openssl.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($found) { $openssl = $found.FullName }
     }
+    
+    if (-not (Test-Path $openssl)) {
+        throw "OpenSSL not found. Please install OpenSSL or hardcode the path in the script."
+    }
+    # ----------------------------
 
     # Create PFX
     Write-Log "Creating PFX file..."

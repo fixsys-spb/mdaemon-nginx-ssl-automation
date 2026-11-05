@@ -9,9 +9,12 @@
 # --- Parameters ---
 $TaskName        = "MDaemon Cert Update"
 $TaskDescription = "Daily Let's Encrypt SSL update from Nginx Proxy Manager"
-$ScriptPath      = "D:\MDaemon\Scripts\Update-Cert.ps1"
-$CertFolder      = "npm-3" # For Server 1: "npm-3", for Server 2: "npm-4"
-$MDaemonPath     = "D:\MDaemon"
+
+# Auto-detect the path where this script is located
+$ScriptPath      = Join-Path $PSScriptRoot "Update-Cert.ps1" 
+
+$CertFolder      = "npm-3" # CHANGE THIS: For Server 1: "npm-3", for Server 2: "npm-4"
+$MDaemonPath     = "D:\MDaemon" # CHANGE THIS if MDaemon is on another drive
 $RunAt           = "04:00" # Daily execution time
 # ------------------
 

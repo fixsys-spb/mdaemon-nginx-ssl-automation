@@ -1,0 +1,13 @@
+# Logs
+*.log
+
+# Certificates and Keys
+*.pfx
+*.pem
+*.key
+*.crt
+
+# Editor directories and files
+.vscode/
+.idea/
+.DS_Store

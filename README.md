@@ -21,15 +21,19 @@ This repository provides a fully automated solution:
 ### Linux Server (Nginx):
 1. Nginx Proxy Manager deployed (see `linux/docker-compose.yml`).
 2. Proxy Hosts configured with Let's Encrypt SSL.
-3. Samba installed and configured to share the `/data/letsencrypt/live` directory (see `linux/smb.conf.txt`).
+   *   *Note on SAN Certificates:* If you have multiple domains for a single MDaemon server, list them all in the **Domain Names** field separated by **spaces** (e.g., `mail.domain.com domain2.com domain3.com`). NPM will generate a single SAN certificate containing all of them.
+3. Samba installed and configured to share the `/data/letsencrypt/live` directory (see `linux/smb.conf.txt` and `linux/smb.conf.global.patch.txt`).
 
 ### Windows Server (MDaemon):
-1. Insecure guest SMB access enabled (if using Samba without passwords):
+> ⚠️ **SECURITY WARNING:** The steps below enable insecure guest SMB access and SMB1 for compatibility with simple Samba setups. This should only be done in an isolated, trusted local network. For production, configure Samba with a dedicated user (`valid users`) and use `net use` in PowerShell to authenticate.
+> 
+> ⚠️ **PATH WARNING:** The scripts default to `D:\MDaemon`. If your MDaemon is installed on `C:\`, you **must** change the `$MDaemonPath` variable in both `Update-Cert.ps1` and `Install-CertTask.ps1`.
+
+1. Enable insecure guest SMB access (if using Samba without passwords):
    ```powershell
    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name "AllowInsecureGuestAuth" -Value 1 -Type DWord
 
     OpenSSL installed (recommended: OpenSSL-x64-hybridCRT-4.1.0.exe from OpenSSL Corporation).
-    Default path: C:\Program Files\OpenSSL Library\openssl-4.1\bin\openssl.exe
 
     SMB1 client enabled (if required for Samba compatibility):
     powershell
@@ -44,9 +48,9 @@ This repository provides a fully automated solution:
 
         $MDaemonPath (default: D:\MDaemon).
 
-        $openssl (path to your OpenSSL installation).
-
         $NginxShare (UNC path to the Samba share).
+
+    Open Install-CertTask.ps1 and verify the $CertFolder variable (e.g., npm-3 for Server 1, npm-4 for Server 2). The script automatically detects its own path.
 
     Run Install-CertTask.ps1 as Administrator to create a daily Scheduled Task (runs at 04:00 AM).
 
@@ -66,7 +70,7 @@ This repository provides a fully automated solution:
 
     MDaemon fails to start after update: Caused by concurrent script runs. Fixed with Mutex and status waiting.
 
-    Files not visible over SMB: Samba does not follow symlinks by default. The provided smb.conf.txt includes follow symlinks = yes and wide links = yes.
+    Files not visible over SMB: Samba does not follow symlinks by default. The provided global patch enables follow symlinks = yes and wide links = yes.
 
 📄 License
 
