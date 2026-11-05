@@ -1,6 +1,23 @@
-[global]
-   # ... другие настройки ...
+# =====================================================================
+# Samba Global Settings Patch for Let's Encrypt Certificates
+# =====================================================================
+# Nginx Proxy Manager (Certbot) stores certificates as symbolic links.
+# By default, Samba does NOT follow symbolic links outside the shared folder.
+# Windows clients will see the folders but the .pem files will be hidden.
+#
+# INSTRUCTIONS:
+# Copy and paste the lines below into the [global] section at the TOP
+# of your /etc/samba/smb.conf file.
+# =====================================================================
+
+   # Allow Samba to follow symbolic links
    follow symlinks = yes
+   
+   # Allow links that point outside the shared directory
    wide links = yes
+   
+   # Disable UNIX extensions (required for 'wide links' to work)
    unix extensions = no
+   
+   # Allow insecure wide links (required for some Samba versions/Docker setups)
    allow insecure wide links = yes

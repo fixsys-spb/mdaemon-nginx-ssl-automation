@@ -1,56 +1,51 @@
 ﻿<#
 .SYNOPSIS
-    Скрипт для создания задачи в Планировщике заданий для обновления сертификатов MDaemon.
+    Script to create a Scheduled Task for MDaemon certificate updates.
 .DESCRIPTION
-    Создает ежедневную задачу, которая запускает Update-Cert.ps1 с указанными аргументами.
-    Задача выполняется с наивысшими правами и независимо от входа пользователя в систему.
-    Запуск скрипта:
-     powershell.exe -ExecutionPolicy Bypass -File .\Install-CertTask.ps1
+    Creates a daily task that runs Update-Cert.ps1 with specified arguments.
+    The task runs with highest privileges regardless of user login.
 #>
 
-# --- Параметры (при необходимости измените) ---
+# --- Parameters ---
 $TaskName        = "MDaemon Cert Update"
-$TaskDescription = "Ежедневное обновление SSL-сертификатов Let's Encrypt из Nginx Proxy Manager"
+$TaskDescription = "Daily Let's Encrypt SSL update from Nginx Proxy Manager"
 $ScriptPath      = "D:\MDaemon\Scripts\Update-Cert.ps1"
-#$CertFolder      = "npm-3" # Для Сервера 1: "npm-3", для Сервера 2: "npm-4"
-$CertFolder = "npm-3"
+$CertFolder      = "npm-3" # For Server 1: "npm-3", for Server 2: "npm-4"
 $MDaemonPath     = "D:\MDaemon"
-$RunAt           = "04:00" # Время ежедневного запуска
-# ----------------------------------------------
+$RunAt           = "04:00" # Daily execution time
+# ------------------
 
-# Проверка прав администратора
+# Check Admin privileges
 if (-NOT ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {
-    Write-Error "Этот скрипт необходимо запускать от имени Администратора!"
+    Write-Error "This script must be run as Administrator!"
     Exit 1
 }
 
-# Формируем аргументы для запуска Update-Cert.ps1
+# Build argument list
 $ArgumentList = "-ExecutionPolicy Bypass -File `"$ScriptPath`" -CertFolder `"$CertFolder`" -MDaemonPath `"$MDaemonPath`""
 
-# 1. Создаем действие (что запускать)
+# 1. Create Action
 $Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $ArgumentList
 
-# 2. Создаем триггер (когда запускать)
+# 2. Create Trigger
 $Trigger = New-ScheduledTaskTrigger -Daily -At $RunAt
 
-# 3. Настраиваем принципала (от чьего имени и с какими правами)
-# LogonType S4U позволяет запускать задачу без сохранения пароля и без активного входа пользователя.
-# Для этого учетная запись должна обладать правом "Вход в качестве пакетного задания" (Log on as a batch job).
+# 3. Create Principal (S4U allows running without password, Highest privileges)
 $CurrentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
 $Principal = New-ScheduledTaskPrincipal -UserId $CurrentUser -LogonType S4U -RunLevel Highest
 
-# 4. Настраиваем параметры задачи (например, не останавливать при переходе на батарею)
+# 4. Create Settings
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
 
-# 5. Регистрируем задачу в системе
+# 5. Register Task
 try {
     Register-ScheduledTask -TaskName $TaskName -Description $TaskDescription -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force -ErrorAction Stop
-    Write-Host "✅ Задача '$TaskName' успешно создана/обновлена." -ForegroundColor Green
-    Write-Host "   Запуск: Ежедневно в $RunAt" -ForegroundColor Gray
-    Write-Host "   Скрипт: $ScriptPath" -ForegroundColor Gray
-    Write-Host "   Аргументы: $ArgumentList" -ForegroundColor Gray
+    Write-Host "✅ Task '$TaskName' created/updated successfully." -ForegroundColor Green
+    Write-Host "   Schedule: Daily at $RunAt" -ForegroundColor Gray
+    Write-Host "   Script: $ScriptPath" -ForegroundColor Gray
+    Write-Host "   Arguments: $ArgumentList" -ForegroundColor Gray
 }
 catch {
-    Write-Error "❌ Не удалось создать задачу: $($_.Exception.Message)"
-    Write-Host "Попробуйте запустить скрипт еще раз от имени Администратора." -ForegroundColor Yellow
+    Write-Error "❌ Failed to create task: $($_.Exception.Message)"
+    Write-Host "Try running the script again as Administrator." -ForegroundColor Yellow
 }

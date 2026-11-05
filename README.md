@@ -1,66 +1,73 @@
 # MDaemon SSL Automation via Nginx Proxy Manager
 
-Автоматизация обновления SSL-сертификатов Let's Encrypt для почтовых серверов MDaemon (Windows Server) с помощью Nginx Proxy Manager (Linux) и Samba.
+[🇷🇺 Русская версия](README.ru.md)
 
-## 📖 Описание проблемы
-MDaemon на Windows Server не умеет автоматически забирать сертификаты из Nginx Proxy Manager (NPM) или Certbot. Приходится вручную конвертировать `.pem` в `.pfx`, импортировать в хранилище Windows, менять отпечаток в `MDaemon.ini` и перезапускать службу.
+Automated Let's Encrypt SSL certificate renewal for MDaemon Mail Servers (Windows Server) using Nginx Proxy Manager (Linux) and Samba.
 
-Этот репозиторий содержит готовое решение:
-1. **Nginx** (через NPM) сам выпускает и обновляет сертификаты.
-2. **Samba** отдает файлы сертификатов в локальную сеть.
-3. **PowerShell-скрипт** на Windows забирает файлы, безопасно обновляет конфигурацию MDaemon и удаляет старые сертификаты.
+## 📖 Problem Statement
+MDaemon on Windows Server cannot natively fetch and apply certificates from Nginx Proxy Manager (NPM) or Certbot. Administrators are forced to manually convert `.pem` files to `.pfx`, import them into the Windows Certificate Store, update the thumbprint in `MDaemon.ini`, and restart the service.
 
-## 🏗 Архитектура
-*   **Linux (192.168.1.3):** Docker + Nginx Proxy Manager + Samba.
-*   **Windows (192.168.1.9, 192.168.1.11):** MDaemon + OpenSSL + PowerShell.
+This repository provides a fully automated solution:
+1. **Nginx (NPM)** automatically issues and renews certificates.
+2. **Samba** shares the certificate files over the local network.
+3. **PowerShell script** on Windows fetches the files, safely updates the MDaemon configuration, restarts the service, and cleans up old certificates.
 
-## 🛠 Предварительные требования
+## 🏗 Architecture
+*   **Linux (e.g., 192.168.1.3):** Docker + Nginx Proxy Manager + Samba.
+*   **Windows (e.g., 192.168.1.9, 192.168.1.11):** MDaemon + OpenSSL + PowerShell.
 
-### На Linux-сервере (Nginx):
-1. Развернут Nginx Proxy Manager (см. `linux/docker-compose.yml`).
-2. Настроены Proxy Hosts с получением SSL Let's Encrypt.
-3. Установлена и настроена Samba для раздачи папки `/data/letsencrypt/live` (см. `linux/smb.conf.txt`).
+## 🛠 Prerequisites
 
-### На Windows-сервере (MDaemon):
-1. Включен гостевой доступ SMB (если используется Samba без пароля):
+### Linux Server (Nginx):
+1. Nginx Proxy Manager deployed (see `linux/docker-compose.yml`).
+2. Proxy Hosts configured with Let's Encrypt SSL.
+3. Samba installed and configured to share the `/data/letsencrypt/live` directory (see `linux/smb.conf.txt`).
+
+### Windows Server (MDaemon):
+1. Insecure guest SMB access enabled (if using Samba without passwords):
    ```powershell
    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters" -Name "AllowInsecureGuestAuth" -Value 1 -Type DWord
-2. Установлен OpenSSL (рекомендуется OpenSSL-x64-hybridCRT-4.1.0.exe от OpenSSL Corporation).
 
-    Путь по умолчанию: C:\Program Files\OpenSSL Library\openssl-4.1\bin\openssl.exe
+    OpenSSL installed (recommended: OpenSSL-x64-hybridCRT-4.1.0.exe from OpenSSL Corporation).
+    Default path: C:\Program Files\OpenSSL Library\openssl-4.1\bin\openssl.exe
 
-3. Включен SMB1 (если требуется для совместимости с вашей версией Samba):
+    SMB1 client enabled (if required for Samba compatibility):
+    powershell
 
-	Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -All -NoRestart
+    Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol-Client -All -NoRestart
 
-🚀 Установка и настройка
+🚀 Installation & Setup
 
-    Скопируйте папку windows на сервер MDaemon (например, в D:\MDaemon\Scripts\).
+    Copy the windows folder to your MDaemon server (e.g., to D:\MDaemon\Scripts\).
 
-    Откройте Update-Cert.ps1 и проверьте пути:
+    Open Update-Cert.ps1 and verify the paths:
 
-        $MDaemonPath (по умолчанию D:\MDaemon).
+        $MDaemonPath (default: D:\MDaemon).
 
-        $openssl (путь к установленному OpenSSL).
+        $openssl (path to your OpenSSL installation).
 
-        $NginxShare (путь к сетевой папке Samba).
+        $NginxShare (UNC path to the Samba share).
 
-    Запустите Install-CertTask.ps1 от имени Администратора, чтобы создать задачу в Планировщике Windows на ежедневный запуск в 04:00.
+    Run Install-CertTask.ps1 as Administrator to create a daily Scheduled Task (runs at 04:00 AM).
 
-⚙️ Как это работает (Особенности скрипта)
+⚙️ How It Works
 
-    Mutex (Защита от дурака): Скрипт не запустится, если предыдущий экземпляр еще работает.
+    Mutex Protection: The script won't run if another instance is already running.
 
-    Умное ожидание: Используется цикл ожидания полной остановки службы MDaemon (до 2 минут), что критически важно для серверов с медленными дисками.
+    Smart Wait: Uses a wait loop for the MDaemon service to fully stop (up to 2 minutes), critical for servers with slow disks.
 
-    Безопасная запись INI: Используется API WritePrivateProfileString (через C#), чтобы не повредить MDaemon.ini.
+    Safe INI Write: Uses the WritePrivateProfileString API (via C#) to prevent corrupting MDaemon.ini.
 
-    Очистка: Скрипт автоматически удаляет из хранилища Windows старые сертификаты Let's Encrypt для этого же домена, предотвращая их накопление.
+    Cleanup: Automatically removes old Let's Encrypt certificates for the same domain from the Windows Store to prevent clutter.
 
-⚠️ Известные проблемы и их решения
+⚠️ Known Issues & Fixes
 
-    Ошибка certutil: ERROR_FILE_NOT_FOUND: Возникает из-за пробелов в путях. В этом скрипте заменено на нативный PowerShell Import-PfxCertificate.
+    certutil: ERROR_FILE_NOT_FOUND: Caused by spaces in file paths. Fixed by using native PowerShell Import-PfxCertificate.
 
-    Служба MDaemon не запускается после обновления: Возникает при одновременном запуске двух копий скрипта. Решено с помощью Mutex и ожидания статуса Stopped.
+    MDaemon fails to start after update: Caused by concurrent script runs. Fixed with Mutex and status waiting.
 
-    Файлы не видны по SMB: Samba по умолчанию не отдает симлинки. В конфиге Samba добавлены follow symlinks = yes и wide links = yes.
+    Files not visible over SMB: Samba does not follow symlinks by default. The provided smb.conf.txt includes follow symlinks = yes and wide links = yes.
+
+📄 License
+
+This project is licensed under the MIT License.

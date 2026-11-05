@@ -1,5 +1,5 @@
 ﻿param(
-    [Parameter(Mandatory=$true)][string]$CertFolder, # Имя папки (npm-3 или npm-4)
+    [Parameter(Mandatory=$true)][string]$CertFolder, # Folder name (e.g., npm-3 or npm-4)
     [string]$NginxShare = "\\192.168.1.3\certs",
     [string]$PfxPassword = [System.Guid]::NewGuid().ToString(),
     [string]$MDaemonPath = "D:\MDaemon"
@@ -11,7 +11,7 @@ $TempPfx      = Join-Path $env:TEMP "$CertFolder-$(Get-Date -Format 'yyyyMMddHHm
 $ServiceName  = "MDaemon"
 $SourceCertPath = Join-Path $NginxShare $CertFolder
 
-# Безопасная функция для записи в INI
+# Safe function for writing to INI (WritePrivateProfileString)
 $signature = @'
 [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
 public static extern bool WritePrivateProfileString(string section, string key, string val, string filePath);
@@ -23,100 +23,100 @@ function Write-Log { param([string]$msg)
     Add-Content $LogFile $line; Write-Host $line 
 }
 
-# --- ЗАЩИТА ОТ ОДНОВРЕМЕННОГО ЗАПУСКА (MUTEX) ---
+# --- CONCURRENT EXECUTION PROTECTION (MUTEX) ---
 $mutex = New-Object System.Threading.Mutex($false, "Global\MDaemonCertUpdateMutex")
 if (-not $mutex.WaitOne(0, $false)) {
-    Write-Host "Другой экземпляр скрипта уже выполняется. Выход." -ForegroundColor Yellow
+    Write-Host "Another instance of the script is already running. Exiting." -ForegroundColor Yellow
     exit
 }
 # ------------------------------------------------
 
-Write-Log "=== Обновление сертификата из папки $CertFolder ==="
+Write-Log "=== Updating certificate from folder $CertFolder ==="
 
 try {
     $fullchain = Join-Path $SourceCertPath "fullchain.pem"
     $privkey   = Join-Path $SourceCertPath "privkey.pem"
     
     if (-not (Test-Path $SourceCertPath)) {
-        throw "Сетевая папка $SourceCertPath недоступна. Проверьте Samba на Nginx."
+        throw "Network path $SourceCertPath is unreachable. Check Samba on Nginx."
     }
     if (-not (Test-Path $fullchain) -or -not (Test-Path $privkey)) {
-        throw "Файлы сертификата не найдены в $SourceCertPath"
+        throw "Certificate files not found in $SourceCertPath"
     }
 
-    # Копируем локально
+    # Copy locally to avoid network locks
     $LocalChain = Join-Path $env:TEMP "fullchain.pem"
     $LocalKey   = Join-Path $env:TEMP "privkey.pem"
     Copy-Item $fullchain $LocalChain -Force
     Copy-Item $privkey $LocalKey -Force
 
-    # --- ПУТЬ К OPENSSL ---
+    # --- OPENSSL PATH ---
     $openssl = "C:\Program Files\OpenSSL Library\openssl-4.1\bin\openssl.exe"
     if (-not (Test-Path $openssl)) {
-        throw "OpenSSL не найден по пути $openssl."
+        throw "OpenSSL not found at $openssl."
     }
 
-    # Создание PFX
-    Write-Log "Создание PFX файла..."
+    # Create PFX
+    Write-Log "Creating PFX file..."
     & $openssl pkcs12 -export -in $LocalChain -inkey $LocalKey -out $TempPfx -passout "pass:$PfxPassword"
     
     if (-not (Test-Path $TempPfx)) {
-        throw "Ошибка: OpenSSL не создал файл $TempPfx."
+        throw "Error: OpenSSL failed to create $TempPfx."
     }
 
-    # Импорт в хранилище Windows
-    Write-Log "Импорт в хранилище Windows..."
+    # Import to Windows Store
+    Write-Log "Importing to Windows Store..."
     $securePass = ConvertTo-SecureString -String $PfxPassword -AsPlainText -Force
     $importedCert = Import-PfxCertificate -FilePath $TempPfx -CertStoreLocation Cert:\LocalMachine\My -Password $securePass
     
     if (-not $importedCert) {
-        throw "Не удалось импортировать сертификат в хранилище."
+        throw "Failed to import certificate."
     }
 
-    # Получение отпечатка
+    # Get thumbprint
     $thumbRaw = $importedCert.Thumbprint
     $thumbIni = ($thumbRaw -replace '(..)', '$1 ').Trim()
-    Write-Log "Новый отпечаток: $thumbIni"
+    Write-Log "New thumbprint: $thumbIni"
 
-    # --- УМНОЕ УПРАВЛЕНИЕ СЛУЖБОЙ ---
+    # --- SMART SERVICE MANAGEMENT ---
     $service = Get-Service -Name $ServiceName -ErrorAction Stop
     
     if ($service.Status -ne 'Stopped') {
-        Write-Log "Остановка службы $ServiceName (текущий статус: $($service.Status))..."
+        Write-Log "Stopping service $ServiceName (current status: $($service.Status))..."
         Stop-Service $ServiceName -Force -ErrorAction SilentlyContinue
-        # Ждем полной остановки (максимум 60 секунд)
+        # Wait for full stop (max 60 seconds)
         $timeout = 60
         while ((Get-Service $ServiceName).Status -ne 'Stopped' -and $timeout -gt 0) {
             Start-Sleep -Seconds 2
             $timeout -= 2
         }
         if ((Get-Service $ServiceName).Status -ne 'Stopped') {
-            throw "Служба $ServiceName не остановилась за 60 секунд. Обновление прервано."
+            throw "Service $ServiceName failed to stop within 60 seconds. Update aborted."
         }
     } else {
-        Write-Log "Служба $ServiceName уже остановлена. Пропуск шага остановки."
+        Write-Log "Service $ServiceName is already stopped. Skipping stop step."
     }
     
-    # Запись нового отпечатка в INI
+    # Write new thumbprint to INI
     $success = $iniWriter::WritePrivateProfileString("SSL", "CertificateHash", $thumbIni, $MdIniPath)
     if (-not $success) {
-        Write-Log "ПРЕДУПРЕЖДЕНИЕ: Не удалось записать через API. Используем резервный метод..."
+        Write-Log "WARNING: Failed to write via API. Using fallback method..."
         (Get-Content $MdIniPath) -replace 'CertificateHash\s*=.*', "CertificateHash=$thumbIni" | Set-Content $MdIniPath
     }
     
-    # Запуск службы
-    Write-Log "Запуск службы $ServiceName..."
+    # Start service
+    Write-Log "Starting service $ServiceName..."
     try {
         $service.Start()
-        $service.WaitForStatus('Running', '00:01:00')
-        Write-Log "Сертификат успешно активирован."
+        $service.WaitForStatus('Running', '00:02:00')
+        Write-Log "Certificate successfully activated."
     } catch {
-        throw "Не удалось запустить службу $ServiceName. Ошибка: $($_.Exception.Message)"
+        throw "Failed to start service $ServiceName. Error: $($_.Exception.Message)"
     }
     # ----------------------------------------------
 
-    # --- ОЧИСТКА СТАРЫХ СЕРТИФИКАТОВ LET'S ENCRYPT ДЛЯ ЭТОГО ДОМЕНА ---
-    Write-Log "Запуск очистки старых сертификатов для домена $($importedCert.Subject)..."
+    # --- CLEANUP OLD LET'S ENCRYPT CERTIFICATES FOR THIS DOMAIN ---
+    Write-Log "Cleaning up old certificates for domain $($importedCert.Subject)..."
     
     $oldCerts = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { 
         $_.Issuer -match "Let's Encrypt" -and $_.Subject -eq $importedCert.Subject -and $_.Thumbprint -ne $thumbRaw
@@ -126,20 +126,20 @@ try {
         foreach ($cert in $oldCerts) {
             try {
                 Remove-Item -Path $cert.PSPath -Force -ErrorAction Stop
-                Write-Log "✅ Удален старый неактивный сертификат: $($cert.Thumbprint)"
+                Write-Log "✅ Removed old inactive certificate: $($cert.Thumbprint)"
             } catch {
-                Write-Log "❌ Не удалось удалить сертификат $($cert.Thumbprint): $($_.Exception.Message)"
+                Write-Log "❌ Failed to remove certificate $($cert.Thumbprint): $($_.Exception.Message)"
             }
         }
     } else {
-        Write-Log "Старые сертификаты для этого домена не найдены (хранилище чистое)."
+        Write-Log "No old certificates found for this domain (store is clean)."
     }
     # --------------------------------------------------------------------------
 }
 catch {
-    Write-Log "КРИТИЧЕСКАЯ ОШИБКА: $($_.Exception.Message)"
+    Write-Log "CRITICAL ERROR: $($_.Exception.Message)"
     if ((Get-Service $ServiceName).Status -ne 'Running') { 
-        Write-Log "Попытка аварийного запуска службы..."
+        Write-Log "Attempting emergency service start..."
         Start-Service $ServiceName -ErrorAction SilentlyContinue
     }
 }
@@ -148,7 +148,7 @@ finally {
     if (Test-Path $LocalChain) { Remove-Item $LocalChain -Force }
     if (Test-Path $LocalKey)   { Remove-Item $LocalKey -Force }
     
-    # --- ОСВОБОЖДЕНИЕ MUTEX ---
+    # --- MUTEX RELEASE ---
     if ($mutex) {
         $mutex.ReleaseMutex()
         $mutex.Dispose()
