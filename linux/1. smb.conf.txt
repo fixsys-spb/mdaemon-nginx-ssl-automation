@@ -1,0 +1,16 @@
+# Пример конфигурации Samba для раздачи сертификатов Let's Encrypt
+# Скопируйте этот блок в конец вашего /etc/samba/smb.conf
+#
+# ВАЖНО: Путь в 'path' должен указывать на папку 'live' внутри volume
+# 'letsencrypt', который вы пробросили в docker-compose.yml.
+
+[certs]
+   comment = Let's Encrypt Certificates for MDaemon
+   # Укажите ваш реальный путь к папке live
+   # Пример: /root/nginxprog/letsencrypt/live
+   path = /path/to/your/nginxprog/letsencrypt/live
+   read only = yes
+   browseable = yes
+   guest ok = yes
+   # Эта директива критически важна для LXC/Docker, чтобы Windows могла читать файлы
+   force user = root

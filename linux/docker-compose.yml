@@ -1,0 +1,18 @@
+# Nginx Proxy Manager - Docker Compose
+# Project: MDaemon SSL Automation
+# Docs: https://nginxproxymanager.com/guide/#quick-setup
+
+services:
+  app:
+    image: 'docker.io/jc21/nginx-proxy-manager:latest'
+    restart: unless-stopped
+    ports:
+      - '80:80'    # HTTP - для Let's Encrypt challenge и редиректов
+      - '81:81'    # Admin UI - для управления NPM
+      - '443:443'  # HTTPS - для проксирования
+    volumes:
+      # Данные NPM (база данных, пользователи, настройки)
+      - ./data:/data
+      # Сертификаты Let's Encrypt.
+      # Эта папка пробрасывается на хост, чтобы Samba могла её раздать.
+      - ./letsencrypt:/etc/letsencrypt

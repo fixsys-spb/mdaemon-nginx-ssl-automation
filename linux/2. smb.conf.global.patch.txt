@@ -1,0 +1,6 @@
+[global]
+   # ... другие настройки ...
+   follow symlinks = yes
+   wide links = yes
+   unix extensions = no
+   allow insecure wide links = yes
